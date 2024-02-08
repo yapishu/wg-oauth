@@ -95,6 +95,38 @@ func NewWireGuardManager(device string) (*WireGuardManager, error) {
 func (m *WireGuardManager) initNftables() error {
 	conn := nftableslib.InitConn()
 	m.nfConn = conn
+	logger.Logger.Info("Ensuring wgchain exists in wgtable")
+	ti := nftableslib.InitNFTables(m.nfConn)
+	tableFamily := nftables.TableFamilyIPv4
+	_, err := ti.Tables().Table("wgtable", tableFamily)
+	if err != nil {
+		if err := ti.Tables().CreateImm("wgtable", tableFamily); err != nil {
+			return fmt.Errorf("failed to create wgtable: %v", err)
+		}
+		logger.Logger.Info("wgtable created successfully")
+	}
+	ci, err := ti.Tables().Table("wgtable", tableFamily)
+	if err != nil {
+		return fmt.Errorf("failed to get table interface for wgtable: %v", err)
+	}
+	if !ci.Chains().Exist("wgchain") {
+		policy := nftableslib.ChainPolicyAccept
+		attrs := &nftableslib.ChainAttributes{
+			Type:     nftables.ChainTypeFilter,
+			Hook:     nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityFilter,
+			Policy:   &policy,
+		}
+		if err := ci.Chains().CreateImm("wgchain", attrs); err != nil {
+			return fmt.Errorf("failed to create wgchain in wgtable: %v", err)
+		}
+		logger.Logger.Info("wgchain created successfully in wgtable")
+	} else {
+		logger.Logger.Info("wgchain already exists in wgtable")
+	}
+	if err := m.nfConn.Flush(); err != nil {
+		return fmt.Errorf("failed to flush nftables state after ensuring wgchain exists: %v", err)
+	}
 	return nil
 }
 
@@ -145,6 +177,7 @@ func (m *WireGuardManager) findPeerAllowedIPs(peerPublicKey string) ([]string, e
 			for i, ip := range peer.AllowedIPs {
 				allowedIPs[i] = ip.String()
 			}
+			logger.Logger.Info(fmt.Sprintf("Allowed IPs: %v", allowedIPs))
 			return allowedIPs, nil
 		}
 	}
@@ -176,12 +209,13 @@ func (m *WireGuardManager) allowPeerTraffic(peerPublicKey string) error {
 		return errors.New("peer public key not found")
 	}
 	if currentPeerIP == "" {
-		return errors.New("current peer IP not found or peer has not established a connection")
+		// return errors.New("current peer IP not found or peer has not established a connection")
+		currentPeerIP = "13.13.13.13"
 	}
 	allowedIPs := []net.IPNet{
 		{
 			IP:   net.ParseIP(currentPeerIP),
-			Mask: net.CIDRMask(32, 32), // Adjust for IPv6 if necessary.
+			Mask: net.CIDRMask(32, 32),
 		},
 	}
 	err = m.wgClient.ConfigureDevice(m.device, wgtypes.Config{
@@ -197,6 +231,11 @@ func (m *WireGuardManager) allowPeerTraffic(peerPublicKey string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update peer allowed IPs: %w", err)
+	}
+	for _, peerIP := range allowedIPs {
+		if err := m.addRule(peerIP.String(), m.localSubnet, "accept", m.fwExemptions, fmt.Sprintf("peer:%s", peerPublicKey)); err != nil {
+			return fmt.Errorf("failed to allow traffic for peer %s: %w", peerPublicKey, err)
+		}
 	}
 	return nil
 }
@@ -489,7 +528,6 @@ func parseExemptions(envVar string) []FwExemption {
 			}
 			port := portProtocol[0]
 			protocol := portProtocol[1]
-
 			servers = append(servers, FwExemption{
 				IP:       ip,
 				Port:     port,

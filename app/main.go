@@ -55,7 +55,6 @@ func main() {
 		return
 	}
 	publicKey := privateKey.PublicKey()
-	logger.Logger.Info(fmt.Sprintf("Adding %s", publicKey.String()))
 	if err = wgManager.AddPeer(wgtypes.PeerConfig{PublicKey: publicKey}); err != nil {
 		logger.Logger.Error(fmt.Sprintf("Couldn't add peer %v: %w", publicKey, err))
 	}
