@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  wg-oauth:
+    container_name: wg-oauth
+    build: .
+    environment:
+      - WG_COOKIE_KEY
+      - NRLICENSE
+      - DBPATH=/data/
+      - WG_GROUP_MEMBER
+      - WG_AZURE_ID
+      - WG_AZURE_SECRET
+      - WG_REDIRECT
+      - LOCAL_SUBNET
+      - GATEWAY_IP
+      - FW_EXEMPTIONS
+      - ENVIRONMENT
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      - ./data:/data
+      # - /etc/wireguard:/etc/wireguard
+    ports:
+      - "8080:8080"
+      - "51820:51820"
