@@ -288,59 +288,66 @@ func (m *WireGuardManager) RestartWireGuardInterface() error {
 }
 
 func (m *WireGuardManager) addRule(srcIP, destIP, action string, fwExemptions []FwExemption, comment string) error {
-	logger.Logger.Info(fmt.Sprintf("Adding rule: %v->%v/%v for %v", srcIP, destIP, action, comment))
-	ti := nftableslib.InitNFTables(m.nfConn)
-	tableFamily := nftables.TableFamilyIPv4
-	if err := ti.Tables().Create("wgtable", tableFamily); err != nil && !strings.Contains(err.Error(), "exists") {
-		return fmt.Errorf("failed to create/find table: %v", err)
-	}
-	ci, err := ti.Tables().Table("wgtable", tableFamily)
-	if err != nil {
-		return fmt.Errorf("failed to get table interface: %v", err)
-	}
-	userDataBytes := []byte(comment)
-	srcAddr, err := nftableslib.NewIPAddr(srcIP)
-	if err != nil {
-		return fmt.Errorf("failed to parse source IP address: %v", err)
-	}
-	destAddr, err := nftableslib.NewIPAddr(destIP)
-	if err != nil {
-		return fmt.Errorf("failed to parse destination IP address: %v", err)
-	}
-	ruleAction, err := translateActionToVerdict(action)
-	if err != nil {
-		return fmt.Errorf("failed to parse rule verdict: %v", err)
-	}
-	rule := &nftableslib.Rule{
-		L3: &nftableslib.L3Rule{
-			Src: &nftableslib.IPAddrSpec{
-				List: []*nftableslib.IPAddr{srcAddr},
-			},
-			Dst: &nftableslib.IPAddrSpec{
-				List: []*nftableslib.IPAddr{destAddr},
-			},
-		},
-		Action:   ruleAction,
-		UserData: userDataBytes,
-	}
-	for _, exemption := range fwExemptions {
-		l4Rule, err := protocolPortExpr(exemption.Protocol, exemption.Port)
-		if err != nil {
-			return fmt.Errorf("failed to create protocol/port expression: %v", err)
-		}
-		rule.L4 = l4Rule
-	}
-	ri, err := ci.Chains().Chain("wgchain")
-	if err != nil {
-		return fmt.Errorf("failed to get chain interface: %v", err)
-	}
-	if _, err := ri.Rules().Create(rule); err != nil {
-		return fmt.Errorf("failed to create rule: %v", err)
-	}
-	if err := m.nfConn.Flush(); err != nil {
-		return fmt.Errorf("failed to program nftable with error: %+v", err)
-	}
-	return nil
+    logger.Logger.Info(fmt.Sprintf("Adding rule: %v->%v/%v for %v", srcIP, destIP, action, comment))
+    ti := nftableslib.InitNFTables(m.nfConn)
+    tableFamily := nftables.TableFamilyIPv4
+    _, err := ti.Tables().Table("wgtable", tableFamily)
+    if err != nil {
+        logger.Logger.Error(fmt.Sprintf("Table 'wgtable' does not exist: %v", err))
+        return err
+    }
+    ci, err := ti.Tables().Table("wgtable", tableFamily)
+    if err != nil {
+        logger.Logger.Error(fmt.Sprintf("Failed to get table interface for 'wgtable': %v", err))
+        return err
+    }
+    if !ci.Chains().Exist("wgchain") {
+        logger.Logger.Error("Chain 'wgchain' does not exist, cannot add rule")
+        return fmt.Errorf("chain 'wgchain' does not exist")
+    }
+    userDataBytes := []byte(comment)
+    srcAddr, err := nftableslib.NewIPAddr(srcIP)
+    if err != nil {
+        return fmt.Errorf("failed to parse source IP address: %v", err)
+    }
+    destAddr, err := nftableslib.NewIPAddr(destIP)
+    if err != nil {
+        return fmt.Errorf("failed to parse destination IP address: %v", err)
+    }
+    ruleAction, err := translateActionToVerdict(action)
+    if err != nil {
+        return fmt.Errorf("failed to parse rule verdict: %v", err)
+    }
+    rule := &nftableslib.Rule{
+        L3: &nftableslib.L3Rule{
+            Src: &nftableslib.IPAddrSpec{
+                List: []*nftableslib.IPAddr{srcAddr},
+            },
+            Dst: &nftableslib.IPAddrSpec{
+                List: []*nftableslib.IPAddr{destAddr},
+            },
+        },
+        Action:   ruleAction,
+        UserData: userDataBytes,
+    }
+    for _, exemption := range fwExemptions {
+        l4Rule, err := protocolPortExpr(exemption.Protocol, exemption.Port)
+        if err != nil {
+            return fmt.Errorf("failed to create protocol/port expression: %v", err)
+        }
+        rule.L4 = l4Rule
+    }
+    ri, err := ci.Chains().Chain("wgchain")
+    if err != nil {
+        return fmt.Errorf("failed to get chain interface: %v", err)
+    }
+    if _, err := ri.Rules().Create(rule); err != nil {
+        return fmt.Errorf("failed to create rule: %v", err)
+    }
+    if err := m.nfConn.Flush(); err != nil {
+        return fmt.Errorf("failed to flush nftables state after adding rule: %v", err)
+    }
+    return nil
 }
 
 func (m *WireGuardManager) ExpiredRuleCleanup(peerPublicKey string) {
