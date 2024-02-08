@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   wg-oauth:
+    privileged: true
     container_name: wg-oauth
     build: .
     environment:
@@ -23,7 +24,8 @@ services:
       - net.ipv4.conf.all.src_valid_mark=1
     volumes:
       - ./data:/data
+      - /lib/modules:/lib/modules:ro
       # - /etc/wireguard:/etc/wireguard
     ports:
-      - "8080:8080"
+      - "8181:8181"
       - "51820:51820"

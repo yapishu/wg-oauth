@@ -1,48 +1,51 @@
 package main
 
 import (
-    "fmt"
-    "net/http"
-    "os"
-    "wg-oauth/logger"
-    "wg-oauth/wgapi"
+	"fmt"
+	"net/http"
+	"os"
+	"wg-oauth/logger"
+	"wg-oauth/wgapi"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-var wgManager *wgapi.WireGuardManager
+var (
+	wgManager *wgapi.WireGuardManager
+	HttpPort  = os.Getenv("HTTP_PORT")
+)
 
 func init() {
 	var err error
-    wgManager, err = wgapi.NewWireGuardManager("wg0")
-    if err != nil {
-        logger.Logger.Error(fmt.Sprintf("Failed to initialize WireGuard manager: %v", err))
-        os.Exit(1)
-    }
+	wgManager, err = wgapi.NewWireGuardManager("wg0")
+	if err != nil {
+		logger.Logger.Error(fmt.Sprintf("Failed to initialize WireGuard manager: %v", err))
+		os.Exit(1)
+	}
 }
 
 func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
-    userEmail := "user@example.com"
-    userPubKey := findUserPubKeyByEmail(userEmail)
-    if userPubKey == "" {
-        fmt.Fprintf(w, "User public key not found")
-        return
-    }
-    err := wgManager.UpdatePeerRules(userPubKey, true)
-    if err != nil {
-        logger.Logger.Error(fmt.Sprintf("Failed to update peer rules for %s: %v", userEmail, err))
-        http.Error(w, "Failed to update network access", http.StatusInternalServerError)
-        return
-    }
+	userEmail := "user@example.com"
+	userPubKey := findUserPubKeyByEmail(userEmail)
+	if userPubKey == "" {
+		fmt.Fprintf(w, "User public key not found")
+		return
+	}
+	err := wgManager.UpdatePeerRules(userPubKey, true)
+	if err != nil {
+		logger.Logger.Error(fmt.Sprintf("Failed to update peer rules for %s: %v", userEmail, err))
+		http.Error(w, "Failed to update network access", http.StatusInternalServerError)
+		return
+	}
 
-    fmt.Fprintf(w, "Network access updated for %s", userEmail)
+	fmt.Fprintf(w, "Network access updated for %s", userEmail)
 }
 
 func findUserPubKeyByEmail(email string) string {
-    userDB := map[string]string{
-        "user@example.com": "userPublicKeyHere",
-    }
-    return userDB[email]
+	userDB := map[string]string{
+		"user@example.com": "userPublicKeyHere",
+	}
+	return userDB[email]
 }
 
 func main() {
@@ -57,9 +60,9 @@ func main() {
 		logger.Logger.Error(fmt.Sprintf("Couldn't add peer %v: %w", publicKey, err))
 	}
 	if err = wgManager.UpdatePeerRules(publicKey.String(), true); err != nil {
-		logger.Logger.Error(fmt.Sprintf("Couldn't update peer rules %v: %w", publicKey, err))
+		logger.Logger.Error(fmt.Sprintf("Couldn't update peer rules for %v: %v", publicKey, err))
 	}
-    http.HandleFunc("/oauth/callback", handleOAuthCallback)
-    logger.Logger.Info("Starting server on :8080...")
-    http.ListenAndServe(":8080", nil)
+	http.HandleFunc("/oauth/callback", handleOAuthCallback)
+	logger.Logger.Info(fmt.Sprintf("Starting server on :%s", HttpPort))
+	http.ListenAndServe(fmt.Sprintf(":%s", HttpPort), nil)
 }

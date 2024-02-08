@@ -1,5 +1,9 @@
 package structs
 
+import (
+	"time"
+)
+
 type UserCookie struct {
 	Username string    `json:"Username"`
 	IsAdmin  bool      `json:"isAdmin"`

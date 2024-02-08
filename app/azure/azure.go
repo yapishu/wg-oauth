@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"sidecar/logger"
 	"time"
 	"wg-oauth/confs"
+	"wg-oauth/logger"
 	"wg-oauth/structs"
 
 	"github.com/gorilla/securecookie"
@@ -136,12 +136,13 @@ func GetUserInfo(accessToken string) (string, string, error) {
 		Surname     string `json:"surname"`
 		DisplayName string `json:"displayName"`
 		Email       string `json:"mail"`
+		UPN         string `json:"userPrincipalName"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", "", err
 	}
 	if result.Email == "" {
-		result.Email = result.UserPrincipalName // fallback
+		result.Email = result.UPN // fallback
 	}
 	if result.Email == "" {
 		return "", "", fmt.Errorf(fmt.Sprintf("No email for %v", result.DisplayName))
